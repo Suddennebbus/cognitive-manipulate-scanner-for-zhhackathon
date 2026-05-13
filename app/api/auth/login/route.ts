@@ -8,12 +8,12 @@ export function GET() {
     return NextResponse.json({ error: '未配置 ZHIHU_APP_ID' }, { status: 500 });
   }
 
+  // 知乎 OAuth 授权页（非标准接口）
   const params = new URLSearchParams({
-    client_id: ZHIHU_APP_ID,
+    app_id: ZHIHU_APP_ID,
     redirect_uri: REDIRECT_URI,
     response_type: 'code',
-    scope: 'read',
   });
 
-  return NextResponse.redirect(`https://www.zhihu.com/oauth2/authorize?${params.toString()}`);
+  return NextResponse.redirect(`https://openapi.zhihu.com/authorize?${params.toString()}`);
 }

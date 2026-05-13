@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 const ZHIHU_APP_ID = process.env.ZHIHU_APP_ID || '';
-const ZHIHU_CLIENT_SECRET = process.env.ZHIHU_CLIENT_SECRET || '';
+// 兼容多种环境变量命名
+const ZHIHU_APP_KEY = process.env.ZHIHU_APP_KEY || process.env.ZHIHU_CLIENT_SECRET || process.env.ZHIHU_ACCESS_SECRET || '';
 const REDIRECT_URI = process.env.ZHIHU_REDIRECT_URI || 'https://sudden-cms.vercel.app/api/auth/callback/zhihu';
 
 export async function GET(request: NextRequest) {
@@ -20,15 +21,16 @@ export async function GET(request: NextRequest) {
 
   try {
     // 1. 用 code 换 access_token
-    const tokenRes = await fetch('https://www.zhihu.com/oauth2/token', {
+    // 接口: POST https://openapi.zhihu.com/access_token
+    const tokenRes = await fetch('https://openapi.zhihu.com/access_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
+        app_id: ZHIHU_APP_ID,
+        app_key: ZHIHU_APP_KEY,
         grant_type: 'authorization_code',
-        code,
-        client_id: ZHIHU_APP_ID,
-        client_secret: ZHIHU_CLIENT_SECRET,
         redirect_uri: REDIRECT_URI,
+        code,
       }).toString(),
     });
 
@@ -38,20 +40,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/?error=token_exchange_failed', request.url));
     }
 
-    const tokenData = await tokenRes.json();
+    const tokenData = await tokenRes.json() as Record<string, unknown>;
     const accessToken = tokenData.access_token as string | undefined;
 
     if (!accessToken) {
+      console.error('[知乎 OAuth] token 响应无 access_token:', JSON.stringify(tokenData));
       return NextResponse.redirect(new URL('/?error=no_access_token', request.url));
     }
 
     // 2. 获取用户信息
-    const meRes = await fetch(`https://www.zhihu.com/api/v4/me?access_token=${accessToken}`);
+    // 接口: GET https://openapi.zhihu.com/user
+    // Header: Authorization: Bearer {access_token}
+    const meRes = await fetch('https://openapi.zhihu.com/user', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     const meData = (await meRes.json()) as Record<string, unknown>;
 
+    // 知乎错误响应: { code: 401/403/404, data: "..." }
+    if (meData.code !== undefined && meData.code !== 0 && meData.code !== 200) {
+      console.error('[知乎 OAuth] 获取用户信息失败:', JSON.stringify(meData));
+      return NextResponse.redirect(new URL('/?error=me_api_failed', request.url));
+    }
+
     const user = {
-      name: String(meData.name || meData.id || '知乎用户'),
-      avatar: String(meData.avatar_url || meData.avatar || ''),
+      name: String(meData.fullname || meData.uid || '知乎用户'),
+      avatar: String(meData.avatar_path || ''),
       headline: String(meData.headline || ''),
     };
 
