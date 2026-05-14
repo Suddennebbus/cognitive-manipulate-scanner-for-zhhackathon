@@ -1,0 +1,5 @@
+name = "sudden-cms"
+compatibility_date = "2025-01-01"
+
+[vars]
+# 非敏感变量可以放在这里，敏感变量请在 Cloudflare Dashboard 设置

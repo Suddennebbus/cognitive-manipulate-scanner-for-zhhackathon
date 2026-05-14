@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "pages:build": "npx @cloudflare/next-on-pages",
+    "pages:deploy": "npm run pages:build \u0026\u0026 wrangler pages deploy .vercel/output/static --project-name sudden-cms",
     "start": "next start",
     "lint": "eslint"
   },
@@ -17,6 +19,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -27,6 +30,7 @@
     "puppeteer-core": "^24.43.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vercel": "^53.4.0"
+    "vercel": "^53.4.0",
+    "wrangler": "^4.90.1"
   }
 }

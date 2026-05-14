@@ -1,5 +1,4 @@
 import { ScanResult, RiskSentence } from './types';
-import https from 'https';
 
 // ==================== DeepSeek 配置 ====================
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
@@ -85,71 +84,56 @@ async function analyzeWithDeepSeek(text: string): Promise<ScanResult> {
   return parseAnalysisResult(content, text);
 }
 
-// ==================== HTTP 工具 ====================
+// ==================== HTTP 工具 (Cloudflare compatible) ====================
 
-function httpPostJSON(
+async function httpPostJSON(
   url: string,
   body: object,
   headers: Record<string, string>,
   timeoutMs: number
 ): Promise<{ status: number; json: () => Promise<unknown>; text: () => string }> {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const postData = JSON.stringify(body);
-    const startTime = Date.now();
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    console.log(`[API] POST ${urlObj.hostname} 开始, 超时: ${timeoutMs}ms`);
-
-    const req = https.request(
-      {
-        hostname: urlObj.hostname,
-        port: urlObj.port || 443,
-        path: urlObj.pathname + urlObj.search,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Content-Length': Buffer.byteLength(postData),
-          ...headers,
-        },
-        timeout: timeoutMs,
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...headers,
       },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          const elapsed = Date.now() - startTime;
-          console.log(
-            `[API] ${urlObj.hostname} 响应: HTTP ${res.statusCode}, 耗时 ${elapsed}ms, 返回 ${data.length} 字节`
-          );
-          if (res.statusCode && res.statusCode >= 400) {
-            console.error(`[API] ${urlObj.hostname} 错误响应体:`, data.slice(0, 500));
-          }
-          resolve({
-            status: res.statusCode || 0,
-            json: async () => JSON.parse(data),
-            text: () => data,
-          });
-        });
-      }
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const data = await res.text();
+    const elapsed = Date.now() - startTime;
+    const urlObj = new URL(url);
+    console.log(
+      `[API] ${urlObj.hostname} 响应: HTTP ${res.status}, 耗时 ${elapsed}ms, 返回 ${data.length} 字节`
     );
+    if (res.status >= 400) {
+      console.error(`[API] ${urlObj.hostname} 错误响应体:`, data.slice(0, 500));
+    }
 
-    req.on('error', (err) => {
-      console.error(`[API] ${urlObj.hostname} 请求错误:`, err.message);
-      reject(err);
-    });
-    req.on('timeout', () => {
-      const elapsed = Date.now() - startTime;
-      console.error(`[API] ${urlObj.hostname} 请求超时, 已耗时 ${elapsed}ms`);
-      req.destroy();
-      reject(new Error(`请求超时（${timeoutMs}ms）`));
-    });
-
-    req.write(postData);
-    req.end();
-  });
+    return {
+      status: res.status,
+      json: async () => JSON.parse(data),
+      text: () => data,
+    };
+  } catch (err) {
+    const urlObj = new URL(url);
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.error(`[API] ${urlObj.hostname} 请求超时, 已耗时 ${timeoutMs}ms`);
+      throw new Error(`请求超时（${timeoutMs}ms）`);
+    }
+    console.error(`[API] ${urlObj.hostname} 请求错误:`, err instanceof Error ? err.message : String(err));
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ==================== 解析工具 ====================
